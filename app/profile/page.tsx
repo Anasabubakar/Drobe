@@ -41,13 +41,13 @@ interface Stats { items: number; outfits: number }
 
 export default function ProfilePage() {
   const router = useRouter();
-  const supabase = createSupabaseBrowserClient();
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState<Stats>({ items: 0, outfits: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
+      const supabase = createSupabaseBrowserClient();
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
 
@@ -71,6 +71,7 @@ export default function ProfilePage() {
   }, []);
 
   const handleSignOut = async () => {
+    const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
     router.push("/auth");
   };
