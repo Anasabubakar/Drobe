@@ -1,0 +1,40 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServiceClient, uploadToStorage } from "@/lib/supabase";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+
+export async function POST(req: NextRequest) {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { get: (name: string) => cookieStore.get(name)?.value } }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const formData = await req.formData();
+  const file = formData.get("file") as File;
+  if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
+
+  const serviceClient = createSupabaseServiceClient();
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+  const fileName = `${user.id}/portrait-${Date.now()}-${file.name}`;
+  const url = await uploadToStorage(
+    serviceClient,
+    "portraits",
+    fileName,
+    fileBuffer,
+    file.type
+  );
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ portrait_url: url })
+    .eq("id", user.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ url });
+}
