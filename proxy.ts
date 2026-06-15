@@ -11,7 +11,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
+        getAll(): { name: string; value: string }[] {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
