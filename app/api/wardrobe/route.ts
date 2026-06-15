@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
     {
       cookies: {
         getAll(): { name: string; value: string }[] { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } catch {}
         },
       },
@@ -56,7 +57,8 @@ export async function POST(req: NextRequest) {
     {
       cookies: {
         getAll(): { name: string; value: string }[] { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } catch {}
         },
       },
@@ -130,7 +132,8 @@ export async function DELETE(req: NextRequest) {
     {
       cookies: {
         getAll(): { name: string; value: string }[] { return cookieStore.getAll() },
-        setAll(cookiesToSet) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } catch {}
         },
       },
