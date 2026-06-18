@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
 import { View, ActivityIndicator } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import "../global.css";
+
+const queryClient = new QueryClient();
 
 const queryClient = new QueryClient();
 
