@@ -1,7 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { Button } from '../../components/Button';
+import { TextField } from '../../components/TextField';
+import { Logo } from '../../components/Logo';
+import { Screen } from '../../components/Screen';
+import { colors } from '../../lib/theme';
 
 export default function SignupScreen() {
   const [name, setName] = useState('');
@@ -16,104 +29,131 @@ export default function SignupScreen() {
       setError('Please fill in all fields');
       return;
     }
-
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
     setLoading(true);
     setError(null);
-
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
         password,
-        options: {
-          data: { full_name: name },
-        },
+        options: { data: { full_name: name.trim() } },
       });
       if (error) throw error;
-      router.replace('/(tabs)');
+      if (data.session) {
+        router.replace('/(tabs)');
+      } else {
+        Alert.alert(
+          'Verify your email',
+          'We sent a confirmation link to ' + email.trim() + '. Verify, then sign in.'
+        );
+        router.replace('/(auth)/login');
+      }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message ?? 'Sign up failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-surface"
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="px-6 py-16">
-        <View className="items-center mb-12">
-          <Text className="text-primary text-4xl font-black tracking-tighter">DROBE</Text>
-        </View>
+    <Screen edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={{ alignItems: 'center', marginBottom: 40 }}>
+            <Logo size={40} />
+          </View>
 
-        <View className="items-center mb-8">
-          <Text className="text-headline-lg font-bold text-on-surface text-center text-3xl mb-2">The Art of Dressing</Text>
-          <Text className="text-on-surface-variant text-center text-lg">Curate your personal style with intelligence and ease.</Text>
-        </View>
+          <View style={{ marginBottom: 32 }}>
+            <Text
+              style={{
+                color: colors.onSurface,
+                fontSize: 28,
+                fontWeight: '800',
+                textAlign: 'center',
+                marginBottom: 6,
+              }}
+            >
+              The art of dressing
+            </Text>
+            <Text
+              style={{
+                color: colors.onSurfaceVariant,
+                fontSize: 15,
+                textAlign: 'center',
+              }}
+            >
+              Curate your personal style with ease.
+            </Text>
+          </View>
 
-        <View className="space-y-4">
-          <View className="space-y-2">
-            <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold ml-1">Full Name</Text>
-            <TextInput
-              className="w-full h-14 px-5 bg-surface-container-low border border-outline-variant/30 rounded-2xl text-on-surface"
+          <View style={{ gap: 16 }}>
+            <TextField
+              label="Full Name"
               placeholder="Your name"
               value={name}
               onChangeText={setName}
+              autoCapitalize="words"
             />
-          </View>
-
-          <View className="space-y-2">
-            <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold ml-1">Email Address</Text>
-            <TextInput
-              className="w-full h-14 px-5 bg-surface-container-low border border-outline-variant/30 rounded-2xl text-on-surface"
+            <TextField
+              label="Email"
               placeholder="name@example.com"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoComplete="email"
             />
-          </View>
-
-          <View className="space-y-2">
-            <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold ml-1">Password</Text>
-            <TextInput
-              className="w-full h-14 px-5 bg-surface-container-low border border-outline-variant/30 rounded-2xl text-on-surface"
-              placeholder="••••••••"
+            <TextField
+              label="Password"
+              placeholder="At least 6 characters"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              autoComplete="password-new"
             />
+
+            {error && (
+              <View
+                style={{
+                  backgroundColor: colors.errorContainer,
+                  padding: 12,
+                  borderRadius: 12,
+                }}
+              >
+                <Text style={{ color: colors.error, textAlign: 'center', fontSize: 13 }}>
+                  {error}
+                </Text>
+              </View>
+            )}
+
+            <Button label="Create Account" onPress={handleSignup} loading={loading} size="lg" />
           </View>
 
-          {error && (
-            <View className="bg-error-container p-4 rounded-2xl">
-              <Text className="text-error text-center font-medium">{error}</Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            onPress={handleSignup}
-            disabled={loading}
-            className="w-full h-14 bg-primary rounded-2xl items-center justify-center mt-4 shadow-lg"
+          <View
+            style={{
+              alignItems: 'center',
+              marginTop: 24,
+              flexDirection: 'row',
+              justifyContent: 'center',
+            }}
           >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text className="text-white font-bold text-lg">Create Account</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <View className="items-center mt-8">
-          <Text className="text-on-surface-variant text-base">
-            Already a member?{' '}
+            <Text style={{ color: colors.onSurfaceVariant, fontSize: 14 }}>Already a member? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-              <Text className="text-primary font-bold">Log In</Text>
+              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 14 }}>Log in</Text>
             </TouchableOpacity>
-          </Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }

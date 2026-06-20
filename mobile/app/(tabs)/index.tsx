@@ -1,95 +1,459 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, Image, FlatList, ActivityIndicator } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Modal,
+  Alert,
+} from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useOutfits, OutfitWithItems } from '../../hooks/useOutfits';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Screen } from '../../components/Screen';
+import { Logo } from '../../components/Logo';
+import { Button } from '../../components/Button';
+import { Chip } from '../../components/Chip';
+import { EmptyState } from '../../components/EmptyState';
+import { useWardrobe } from '../../hooks/useWardrobe';
+import { useOutfits } from '../../hooks/useOutfits';
+import { useProfile } from '../../hooks/useProfile';
+import { suggestOutfits, OutfitSuggestion } from '../../lib/recommendations';
+import { OCCASIONS, colors } from '../../lib/theme';
+import { OccasionType } from '../../types';
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { outfits, isLoading } = useOutfits();
+  const { profile } = useProfile();
+  const { items: closet, isLoading: loadingCloset } = useWardrobe('all');
+  const { outfits, saveOutfit } = useOutfits();
 
-  const renderOutfit = ({ item }: { item: OutfitWithItems }) => {
-    const previewImg = item.ai_preview_url || item.items?.[0]?.clean_image_url || item.items?.[0]?.image_url;
-    return (
-      <TouchableOpacity 
-        onPress={() => router.push('/(tabs)/outfits')}
-        className="w-64 bg-surface-container-lowest rounded-3xl p-2 mr-4 shadow-sm border border-outline-variant/10"
-      >
-        <View className="aspect-[3/4] rounded-2xl overflow-hidden bg-surface-container mb-3">
-          {previewImg ? (
-            <Image source={{ uri: previewImg }} className="w-full h-full object-cover" />
-          ) : (
-            <View className="flex-1 items-center justify-center">
-              <Text className="text-on-surface-variant">No Preview</Text>
-            </View>
-          )}
-        </View>
-        <View className="flex-row justify-between items-center px-1">
-          <View>
-            <Text className="text-on-surface-variant uppercase tracking-wider text-xs font-semibold">{item.name}</Text>
-            {item.occasion && <Text className="text-on-surface-variant/50 text-[10px] capitalize">{item.occasion}</Text>}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [occasion, setOccasion] = useState<OccasionType>('casual');
+  const [suggestions, setSuggestions] = useState<OutfitSuggestion[]>([]);
+  const [generating, setGenerating] = useState(false);
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
+
+  const displayName =
+    profile?.full_name?.split(' ')[0] ?? '';
+
+  const handleGetDressed = async () => {
+    if (closet.length < 2) {
+      Alert.alert(
+        'Add a few items first',
+        'Drobe needs at least 2 items to suggest an outfit. Add some clothes to your closet.',
+        [{ text: 'Add Now', onPress: () => router.push('/wardrobe/add') }, { text: 'Later' }]
+      );
+      return;
+    }
+    setPickerOpen(true);
   };
 
+  const generate = async () => {
+    setGenerating(true);
+    try {
+      const s = suggestOutfits(closet, occasion, { count: 3 });
+      setSuggestions(s);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleSaveSuggestion = async (sug: OutfitSuggestion) => {
+    try {
+      await saveOutfit({
+        name: sug.name,
+        occasion: sug.occasion,
+        item_ids: sug.items.map(i => i.id),
+        is_ai_generated: true,
+      });
+      Alert.alert('Saved', 'Outfit added to your collection.');
+      setPickerOpen(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not save');
+    }
+  };
+
+  const recentOutfits = outfits.slice(0, 6);
+
   return (
-    <View className="flex-1 bg-surface">
-      <View className="pt-16 px-6 pb-8">
-        <View className="flex-row justify-between items-center mb-8">
-          <Text className="text-primary text-3xl font-black tracking-tighter">DROBE</Text>
-          <TouchableOpacity className="p-2 bg-surface-container rounded-full">
-            <Text className="text-on-surface-variant">🔔</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View className="items-center mb-12">
-          <View className="w-full aspect-[3/4] rounded-3xl overflow-hidden mb-6 shadow-lg">
-            <Image 
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAU_76Iz-L-CRP_sPLAlqJxJ0MMHT1xt09lBq6h0Oxu8J_9ylFM8oy9j9FIhmSu6rpLdB6ux3be0zhGbxpYad7UH3pAZoGZ770DVGQJ4dowyTZfZh55Qud4pi5YVYBSZBvsOkJE_ejJ_kpDYbnDhWpxQST6xwI8DdllfkcbdmxMkLsiZOWl5FfSRK5S0So2t5_Pwqnc9oGtmjf3QsvUis3Xg1s5P28wKSbVPZinju1uXJsh7Hiz4CrJCsMbVL0nKYgxabKDJ0a8Gnag' }} 
-              className="w-full h-full object-cover" 
-            />
-          </View>
-          <TouchableOpacity 
-            onPress={() => router.push('/outfits/builder')}
-            className="w-full h-14 bg-primary rounded-2xl items-center justify-center shadow-lg"
+    <Screen scroll>
+      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32 }}>
+        {/* Header */}
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 24,
+          }}
+        >
+          <Logo size={26} />
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/profile')}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.surfaceContainer,
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+            }}
           >
-            <Text className="text-white font-bold text-lg">Get Dressed Now</Text>
+            {profile?.portrait_url ? (
+              <Image source={{ uri: profile.portrait_url }} style={{ width: 40, height: 40 }} />
+            ) : (
+              <MaterialCommunityIcons name="account" size={22} color={colors.onSurfaceVariant} />
+            )}
           </TouchableOpacity>
         </View>
 
-        <View>
-          <View className="flex-row justify-between items-end mb-4">
-            <Text className="text-on-surface text-2xl font-bold">Quick Picks</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/outfits')}>
-              <Text className="text-primary font-semibold">View All</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Greeting */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ color: colors.onSurfaceVariant, fontSize: 14 }}>{greeting}</Text>
+          <Text style={{ color: colors.onSurface, fontSize: 28, fontWeight: '800' }}>
+            {displayName ? `${displayName},` : 'Welcome back,'}
+          </Text>
+          <Text style={{ color: colors.onSurface, fontSize: 22, fontWeight: '600' }}>
+            ready to get dressed?
+          </Text>
+        </View>
 
-          {isLoading ? (
-            <ActivityIndicator color="#e75a66" />
-          ) : outfits.length === 0 ? (
-            <View className="bg-surface-container-lowest rounded-2xl p-8 items-center border border-outline-variant/10">
-              <Text className="text-on-surface-variant text-center mb-4">No outfits yet — build your first look</Text>
-              <TouchableOpacity 
-                onPress={() => router.push('/outfits/builder')}
-                className="px-6 py-2 bg-primary rounded-xl"
-              >
-                <Text className="text-white font-bold">Build Outfit</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <FlatList
-              data={outfits.slice(0, 6)}
-              renderItem={renderOutfit}
-              keyExtractor={item => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingRight: 20 }}
-            />
+        {/* Hero CTA card */}
+        <View
+          style={{
+            backgroundColor: colors.primary,
+            borderRadius: 28,
+            padding: 24,
+            marginBottom: 28,
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.25,
+            shadowRadius: 20,
+            elevation: 8,
+          }}
+        >
+          <Text
+            style={{
+              color: 'rgba(255,255,255,0.9)',
+              fontSize: 12,
+              fontWeight: '700',
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              marginBottom: 8,
+            }}
+          >
+            Instant outfit
+          </Text>
+          <Text
+            style={{
+              color: '#FFFFFF',
+              fontSize: 26,
+              fontWeight: '800',
+              lineHeight: 32,
+              marginBottom: 16,
+            }}
+          >
+            Decide what to wear in 10 seconds.
+          </Text>
+          <Button
+            label="Get Dressed Now"
+            onPress={handleGetDressed}
+            variant="secondary"
+            fullWidth={false}
+            size="md"
+            icon={<MaterialCommunityIcons name="creation" size={18} color={colors.primary} />}
+          />
+        </View>
+
+        {/* Quick actions */}
+        <View style={{ flexDirection: 'row', gap: 12, marginBottom: 32 }}>
+          <QuickAction
+            icon="camera-plus-outline"
+            label="Add Clothes"
+            onPress={() => router.push('/wardrobe/add')}
+          />
+          <QuickAction
+            icon="hanger"
+            label="Build Outfit"
+            onPress={() => router.push('/outfits/builder')}
+          />
+          <QuickAction
+            icon="calendar-plus"
+            label="Plan Week"
+            onPress={() => router.push('/(tabs)/schedule')}
+          />
+        </View>
+
+        {/* Recent outfits */}
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            marginBottom: 12,
+          }}
+        >
+          <Text style={{ color: colors.onSurface, fontSize: 20, fontWeight: '700' }}>
+            Your saved looks
+          </Text>
+          {outfits.length > 0 && (
+            <TouchableOpacity onPress={() => router.push('/(tabs)/outfits')}>
+              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 13 }}>
+                See all
+              </Text>
+            </TouchableOpacity>
           )}
         </View>
+
+        {loadingCloset ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : recentOutfits.length === 0 ? (
+          <View
+            style={{
+              backgroundColor: colors.surfaceContainerLowest,
+              borderRadius: 20,
+              padding: 24,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: colors.outlineVariant,
+            }}
+          >
+            <MaterialCommunityIcons name="hanger" size={36} color={colors.onSurfaceMuted} />
+            <Text style={{ color: colors.onSurface, fontSize: 16, fontWeight: '600', marginTop: 8 }}>
+              No outfits yet
+            </Text>
+            <Text style={{ color: colors.onSurfaceVariant, fontSize: 13, marginTop: 4, marginBottom: 16, textAlign: 'center' }}>
+              Build your first look or let Drobe suggest one.
+            </Text>
+            <Button
+              label="Build Outfit"
+              onPress={() => router.push('/outfits/builder')}
+              fullWidth={false}
+              size="sm"
+            />
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 12, paddingRight: 20 }}
+          >
+            {recentOutfits.map(o => {
+              const preview =
+                o.ai_preview_url ||
+                o.items[0]?.clean_image_url ||
+                o.items[0]?.image_url;
+              return (
+                <TouchableOpacity
+                  key={o.id}
+                  onPress={() => router.push(`/outfits/${o.id}`)}
+                  style={{
+                    width: 160,
+                    borderRadius: 20,
+                    overflow: 'hidden',
+                    backgroundColor: colors.surfaceContainer,
+                  }}
+                >
+                  <View style={{ aspectRatio: 3 / 4 }}>
+                    {preview ? (
+                      <Image
+                        source={{ uri: preview }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          flex: 1,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <MaterialCommunityIcons
+                          name="image-off-outline"
+                          size={32}
+                          color={colors.onSurfaceMuted}
+                        />
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ padding: 10 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={{ color: colors.onSurface, fontSize: 13, fontWeight: '700' }}
+                    >
+                      {o.name}
+                    </Text>
+                    {o.occasion && (
+                      <Text
+                        style={{
+                          color: colors.onSurfaceVariant,
+                          fontSize: 11,
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {o.occasion}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
-    </View>
+
+      {/* Quick suggest modal */}
+      <Modal
+        animationType="slide"
+        visible={pickerOpen}
+        presentationStyle="pageSheet"
+        onRequestClose={() => setPickerOpen(false)}
+      >
+        <Screen edges={['top']}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingHorizontal: 20,
+              paddingVertical: 12,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.outlineVariant,
+            }}
+          >
+            <TouchableOpacity onPress={() => setPickerOpen(false)}>
+              <Text style={{ color: colors.onSurfaceVariant, fontSize: 15 }}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={{ fontSize: 17, fontWeight: '700', color: colors.onSurface }}>
+              Get Dressed
+            </Text>
+            <View style={{ width: 50 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
+            <Text
+              style={{
+                color: colors.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: '700',
+                letterSpacing: 1.2,
+                textTransform: 'uppercase',
+                marginBottom: 12,
+              }}
+            >
+              What's the occasion?
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+              {OCCASIONS.map(o => (
+                <Chip
+                  key={o.value}
+                  label={o.label}
+                  active={occasion === o.value}
+                  onPress={() => setOccasion(o.value as OccasionType)}
+                />
+              ))}
+            </View>
+
+            <Button
+              label={suggestions.length ? 'Try again' : 'Generate looks'}
+              onPress={generate}
+              loading={generating}
+              icon={<MaterialCommunityIcons name="creation" size={18} color="#FFF" />}
+            />
+
+            <View style={{ marginTop: 24, gap: 16 }}>
+              {suggestions.map((s, idx) => (
+                <View
+                  key={idx}
+                  style={{
+                    backgroundColor: colors.surfaceContainerLowest,
+                    borderRadius: 20,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: colors.outlineVariant,
+                  }}
+                >
+                  <Text style={{ color: colors.onSurface, fontSize: 16, fontWeight: '700' }}>
+                    {s.name}
+                  </Text>
+                  <Text
+                    style={{ color: colors.onSurfaceVariant, fontSize: 12, marginTop: 2 }}
+                  >
+                    {s.reasoning}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 12 }}>
+                    {s.items.map(it => (
+                      <View
+                        key={it.id}
+                        style={{
+                          flex: 1,
+                          aspectRatio: 3 / 4,
+                          borderRadius: 12,
+                          overflow: 'hidden',
+                          backgroundColor: colors.surfaceContainer,
+                        }}
+                      >
+                        <Image
+                          source={{ uri: it.clean_image_url || it.image_url }}
+                          style={{ width: '100%', height: '100%' }}
+                          contentFit="cover"
+                        />
+                      </View>
+                    ))}
+                  </View>
+                  <Button
+                    label="Save this look"
+                    onPress={() => handleSaveSuggestion(s)}
+                    size="sm"
+                  />
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </Screen>
+      </Modal>
+    </Screen>
+  );
+}
+
+function QuickAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={{
+        flex: 1,
+        backgroundColor: colors.surfaceContainerLowest,
+        borderWidth: 1,
+        borderColor: colors.outlineVariant,
+        borderRadius: 18,
+        paddingVertical: 16,
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      <MaterialCommunityIcons name={icon} size={22} color={colors.primary} />
+      <Text style={{ color: colors.onSurface, fontSize: 12, fontWeight: '600', textAlign: 'center' }}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }

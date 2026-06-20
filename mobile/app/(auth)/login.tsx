@@ -1,7 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TouchableOpacity,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { Button } from '../../components/Button';
+import { TextField } from '../../components/TextField';
+import { Logo } from '../../components/Logo';
+import { Screen } from '../../components/Screen';
+import { colors } from '../../lib/theme';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -15,93 +27,125 @@ export default function LoginScreen() {
       setError('Please fill in all fields');
       return;
     }
-
     setLoading(true);
     setError(null);
-
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
       if (error) throw error;
       router.replace('/(tabs)');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message ?? 'Sign in failed');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Enter your email above first');
+      return;
+    }
+    try {
+      await supabase.auth.resetPasswordForEmail(email.trim());
+      setError('Password reset link sent to your email');
+    } catch (err: any) {
+      setError(err.message ?? 'Could not send reset email');
+    }
+  };
+
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-surface"
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} className="px-6 py-16">
-        <View className="items-center mb-12">
-          <Text className="text-primary text-4xl font-black tracking-tighter">DROBE</Text>
-        </View>
+    <Screen edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={{ alignItems: 'center', marginBottom: 40 }}>
+            <Logo size={40} />
+          </View>
 
-        <View className="items-center mb-8">
-          <Text className="text-headline-lg font-bold text-on-surface text-center text-3xl mb-2">Welcome Back</Text>
-          <Text className="text-on-surface-variant text-center text-lg">Sign in to your curated wardrobe.</Text>
-        </View>
+          <View style={{ marginBottom: 32 }}>
+            <Text
+              style={{
+                color: colors.onSurface,
+                fontSize: 28,
+                fontWeight: '800',
+                textAlign: 'center',
+                marginBottom: 6,
+              }}
+            >
+              Welcome back
+            </Text>
+            <Text
+              style={{
+                color: colors.onSurfaceVariant,
+                fontSize: 15,
+                textAlign: 'center',
+              }}
+            >
+              Pick today's look in under 10 seconds.
+            </Text>
+          </View>
 
-        <View className="space-y-4">
-          <View className="space-y-2">
-            <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold ml-1">Email Address</Text>
-            <TextInput
-              className="w-full h-14 px-5 bg-surface-container-low border border-outline-variant/30 rounded-2xl text-on-surface"
+          <View style={{ gap: 16 }}>
+            <TextField
+              label="Email"
               placeholder="name@example.com"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoComplete="email"
             />
-          </View>
-
-          <View className="space-y-2">
-            <View className="flex-row justify-between items-center px-1">
-              <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold">Password</Text>
-              <TouchableOpacity>
-                <Text className="text-primary text-xs font-semibold">Forgot Password?</Text>
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              className="w-full h-14 px-5 bg-surface-container-low border border-outline-variant/30 rounded-2xl text-on-surface"
+            <TextField
+              label="Password"
               placeholder="••••••••"
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              autoComplete="password"
             />
+
+            <TouchableOpacity onPress={handleResetPassword} style={{ alignSelf: 'flex-end' }}>
+              <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '600' }}>
+                Forgot password?
+              </Text>
+            </TouchableOpacity>
+
+            {error && (
+              <View
+                style={{
+                  backgroundColor: colors.errorContainer,
+                  padding: 12,
+                  borderRadius: 12,
+                }}
+              >
+                <Text style={{ color: colors.error, textAlign: 'center', fontSize: 13 }}>
+                  {error}
+                </Text>
+              </View>
+            )}
+
+            <Button label="Sign In" onPress={handleLogin} loading={loading} size="lg" />
           </View>
 
-          {error && (
-            <View className="bg-error-container p-4 rounded-2xl">
-              <Text className="text-error text-center font-medium">{error}</Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            onPress={handleLogin}
-            disabled={loading}
-            className="w-full h-14 bg-primary rounded-2xl items-center justify-center mt-4 shadow-lg"
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text className="text-white font-bold text-lg">Sign In</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        <View className="items-center mt-8">
-          <Text className="text-on-surface-variant text-base">
-            New to DROBE?{' '}
+          <View style={{ alignItems: 'center', marginTop: 24, flexDirection: 'row', justifyContent: 'center' }}>
+            <Text style={{ color: colors.onSurfaceVariant, fontSize: 14 }}>New to Drobe? </Text>
             <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
-              <Text className="text-primary font-bold">Create an account</Text>
+              <Text style={{ color: colors.primary, fontWeight: '700', fontSize: 14 }}>
+                Create an account
+              </Text>
             </TouchableOpacity>
-          </Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }

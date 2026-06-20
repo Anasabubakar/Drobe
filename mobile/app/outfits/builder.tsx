@@ -1,153 +1,326 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Image, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Screen } from '../../components/Screen';
+import { Button } from '../../components/Button';
+import { Chip } from '../../components/Chip';
+import { EmptyState } from '../../components/EmptyState';
 import { useWardrobe } from '../../hooks/useWardrobe';
 import { useOutfits } from '../../hooks/useOutfits';
-import { ClothingItem } from '../../types';
+import { ClothingItem, ClothingCategory, OccasionType } from '../../types';
+import { OCCASIONS, colors } from '../../lib/theme';
 
-const SLOTS = ["Top", "Bottom", "Outerwear", "Shoes"] as const;
-type Slot = typeof SLOTS[number];
+type SlotKey = 'top' | 'bottom' | 'dress' | 'outerwear' | 'shoes' | 'accessory';
 
-const SLOT_CATEGORY_MAP: Record<Slot, string[]> = {
-  Top: ["top"],
-  Bottom: ["bottom", "dress"],
-  Outerwear: ["outerwear"],
-  Shoes: ["shoes"],
-};
-
-const OCCASIONS = [
-  { value: "casual", label: "Casual" },
-  { value: "work", label: "Work" },
-  { value: "formal", label: "Formal" },
-  { value: "gym", label: "Gym" },
-  { value: "date", label: "Date" },
-  { value: "other", label: "Other" },
+const SLOTS: { key: SlotKey; label: string; icon: any }[] = [
+  { key: 'top', label: 'Top', icon: 'tshirt-crew-outline' },
+  { key: 'bottom', label: 'Bottom', icon: 'human-male' },
+  { key: 'dress', label: 'Dress', icon: 'human-female' },
+  { key: 'outerwear', label: 'Outerwear', icon: 'jacket' },
+  { key: 'shoes', label: 'Shoes', icon: 'shoe-sneaker' },
+  { key: 'accessory', label: 'Accessory', icon: 'sunglasses' },
 ];
 
 export default function OutfitBuilderScreen() {
   const router = useRouter();
-  const { items: closet, isLoading: loadingCloset } = useWardrobe('all');
+  const { items: closet, isLoading } = useWardrobe('all');
   const { saveOutfit } = useOutfits();
-  
-  const [canvas, setCanvas] = useState<Partial<Record<Slot, ClothingItem>>>({});
-  const [name, setName] = useState("");
-  const [occasion, setOccasion] = useState("casual");
+
+  const [canvas, setCanvas] = useState<Partial<Record<SlotKey, ClothingItem>>>({});
+  const [name, setName] = useState('');
+  const [occasion, setOccasion] = useState<OccasionType>('casual');
+  const [filter, setFilter] = useState<SlotKey | 'all'>('all');
   const [saving, setSaving] = useState(false);
 
-  const assignItem = (item: ClothingItem) => {
-    const slot = SLOTS.find(s => SLOT_CATEGORY_MAP[s].includes(item.category));
-    if (slot) setCanvas(prev => ({ ...prev, [slot]: item }));
+  const filtered = useMemo(() => {
+    if (filter === 'all') return closet;
+    return closet.filter(c => c.category === filter);
+  }, [closet, filter]);
+
+  const assign = (item: ClothingItem) => {
+    const slot = item.category as SlotKey;
+    setCanvas(prev => ({ ...prev, [slot]: item }));
   };
 
-  const removeSlot = (slot: Slot) => {
+  const removeSlot = (slot: SlotKey) =>
     setCanvas(prev => {
       const n = { ...prev };
       delete n[slot];
       return n;
     });
-  };
+
+  const itemIds = Object.values(canvas).map(c => c!.id);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert("Error", "Please give your outfit a name");
+    if (itemIds.length < 2) {
+      Alert.alert('Add more items', 'An outfit needs at least 2 items.');
       return;
     }
     setSaving(true);
     try {
-      const item_ids = Object.values(canvas).map(i => i!.id);
-      await saveOutfit({ name: name.trim(), occasion, item_ids });
-      Alert.alert("Success", "Outfit saved!");
+      await saveOutfit({
+        name: name.trim() || 'Untitled Look',
+        occasion,
+        item_ids: itemIds,
+      });
       router.replace('/(tabs)/outfits');
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert('Error', e.message ?? 'Save failed');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <View className="flex-1 bg-surface pt-16">
-      <View className="px-4 pb-4 flex-row items-center justify-between border-b border-outline-variant/10">
+    <Screen edges={['top', 'bottom']}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.outlineVariant,
+        }}
+      >
         <TouchableOpacity onPress={() => router.back()}>
-          <Text className="text-on-surface-variant text-lg">Back</Text>
+          <Text style={{ color: colors.onSurfaceVariant, fontSize: 15 }}>Cancel</Text>
         </TouchableOpacity>
-        <Text className="text-on-surface text-xl font-bold">Outfit Builder</Text>
-        <TouchableOpacity 
-          onPress={handleSave} 
-          disabled={saving}
-          className="h-10 px-4 bg-primary rounded-xl"
-        >
-          <Text className="text-white font-semibold">{saving ? 'Saving...' : 'Save'}</Text>
+        <Text style={{ color: colors.onSurface, fontSize: 16, fontWeight: '700' }}>
+          Outfit Builder
+        </Text>
+        <TouchableOpacity onPress={handleSave} disabled={saving}>
+          <Text style={{ color: colors.primary, fontSize: 15, fontWeight: '700' }}>
+            {saving ? 'Saving' : 'Save'}
+          </Text>
         </TouchableOpacity>
       </View>
 
-      <View className="flex-1 flex-row">
-        {/* Closet Sidebar */}
-        <View className="w-1/3 bg-surface-container-low p-2">
-          <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold mb-2 px-2">Closet</Text>
-          {loadingCloset ? (
-            <ActivityIndicator className="mt-4" />
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View className="flex-row flex-wrap justify-center gap-2">
-                {closet.map(item => (
-                  <TouchableOpacity 
-                    key={item.id} 
-                    onPress={() => assignItem(item)}
-                    className="w-16 h-16 rounded-lg overflow-hidden bg-surface border border-outline-variant/20"
-                  >
-                    <Image source={{ uri: item.clean_image_url || item.image_url }} className="w-full h-full object-cover" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          )}
-        </View>
-
-        {/* Canvas Area */}
-        <View className="flex-1 p-4">
-          <View className="flex-row gap-2 mb-4">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+          {/* Name + occasion */}
+          <View
+            style={{
+              backgroundColor: colors.surfaceContainerLow,
+              borderRadius: 16,
+              padding: 12,
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
             <TextInput
-              className="flex-1 h-10 px-3 bg-surface-container-low border border-outline-variant/20 rounded-xl text-on-surface"
-              placeholder="Outfit name..."
+              placeholder="Name this look..."
+              placeholderTextColor={colors.onSurfaceMuted}
               value={name}
               onChangeText={setName}
+              style={{
+                fontSize: 18,
+                fontWeight: '700',
+                color: colors.onSurface,
+                paddingVertical: 4,
+              }}
             />
-            <View className="h-10 px-2 bg-surface-container-low border border-outline-variant/20 rounded-xl justify-center">
-              <Text className="text-on-surface text-xs">{occasion}</Text>
-              {/* Simplification: Occasion is hardcoded to casual for now or could be a modal */}
-            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {OCCASIONS.map(o => (
+                <Chip
+                  key={o.value}
+                  label={o.label}
+                  active={occasion === o.value}
+                  onPress={() => setOccasion(o.value as OccasionType)}
+                  small
+                />
+              ))}
+            </ScrollView>
           </View>
 
-          <View className="space-y-3">
-            {SLOTS.map(slot => {
-              const item = canvas[slot];
+          {/* Slot grid */}
+          <Text
+            style={{
+              color: colors.onSurfaceVariant,
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              marginBottom: 8,
+              marginLeft: 4,
+            }}
+          >
+            Your look ({itemIds.length})
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+            {SLOTS.map(s => {
+              const item = canvas[s.key];
               return (
-                <View key={slot} className="flex-row items-center gap-3">
-                  <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold w-20">{slot}</Text>
-                  <View className={`flex-1 h-20 rounded-2xl border-2 border-dashed overflow-hidden ${item ? "border-transparent" : "border-outline-variant/25"}`}>
-                    {item ? (
-                      <View className="flex-1 relative">
-                        <Image source={{ uri: item.clean_image_url || item.image_url }} className="w-full h-full object-cover" />
-                        <TouchableOpacity 
-                          onPress={() => removeSlot(slot)}
-                          className="absolute top-1 right-1 w-6 h-6 bg-white/80 rounded-full items-center justify-center"
-                        >
-                          <Text className="text-on-surface font-bold">×</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <View className="flex-1 items-center justify-center">
-                        <Text className="text-on-surface-variant/50 text-xs">Tap an item</Text>
-                      </View>
-                    )}
-                  </View>
+                <View
+                  key={s.key}
+                  style={{
+                    width: '31.5%',
+                    aspectRatio: 1,
+                    borderRadius: 16,
+                    overflow: 'hidden',
+                    backgroundColor: colors.surfaceContainer,
+                    borderWidth: item ? 0 : 1,
+                    borderColor: colors.outlineVariant,
+                    borderStyle: item ? 'solid' : 'dashed',
+                  }}
+                >
+                  {item ? (
+                    <>
+                      <Image
+                        source={{ uri: item.clean_image_url || item.image_url }}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                      />
+                      <TouchableOpacity
+                        onPress={() => removeSlot(s.key)}
+                        style={{
+                          position: 'absolute',
+                          top: 6,
+                          right: 6,
+                          width: 24,
+                          height: 24,
+                          borderRadius: 12,
+                          backgroundColor: 'rgba(255,255,255,0.95)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <MaterialCommunityIcons name="close" size={14} color={colors.onSurface} />
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <View
+                      style={{
+                        flex: 1,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <MaterialCommunityIcons
+                        name={s.icon}
+                        size={22}
+                        color={colors.onSurfaceMuted}
+                      />
+                      <Text style={{ color: colors.onSurfaceMuted, fontSize: 10 }}>
+                        {s.label}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               );
             })}
           </View>
-        </View>
-      </View>
-    </View>
+
+          {/* Closet filter */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 12,
+            }}
+          >
+            <Text style={{ color: colors.onSurface, fontSize: 16, fontWeight: '700' }}>
+              From your closet
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6 }}
+            >
+              <Chip
+                label="All"
+                active={filter === 'all'}
+                onPress={() => setFilter('all')}
+                small
+              />
+              {SLOTS.map(s => (
+                <Chip
+                  key={s.key}
+                  label={s.label}
+                  active={filter === s.key}
+                  onPress={() => setFilter(s.key)}
+                  small
+                />
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Closet grid */}
+          {isLoading ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon="hanger"
+              title="Nothing to show"
+              description="Add some items to your closet first."
+              ctaLabel="Add Clothes"
+              onCta={() => router.push('/wardrobe/add')}
+            />
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {filtered.map(item => {
+                const selected = Object.values(canvas).some(c => c?.id === item.id);
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    onPress={() => assign(item)}
+                    style={{
+                      width: '23%',
+                      aspectRatio: 1,
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      backgroundColor: colors.surfaceContainer,
+                      borderWidth: selected ? 2 : 0,
+                      borderColor: colors.primary,
+                    }}
+                  >
+                    <Image
+                      source={{ uri: item.clean_image_url || item.image_url }}
+                      style={{ width: '100%', height: '100%' }}
+                      contentFit="cover"
+                    />
+                    {selected && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          backgroundColor: 'rgba(231,90,102,0.18)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <MaterialCommunityIcons name="check-circle" size={22} color={colors.primary} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }

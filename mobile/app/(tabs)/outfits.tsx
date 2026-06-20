@@ -1,118 +1,205 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+  ScrollView,
+} from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Screen } from '../../components/Screen';
+import { EmptyState } from '../../components/EmptyState';
+import { Chip } from '../../components/Chip';
 import { useOutfits, OutfitWithItems } from '../../hooks/useOutfits';
+import { colors, OCCASIONS } from '../../lib/theme';
 
-const OCCASION_FILTERS = [
-  { label: "All", value: "all" },
-  { label: "Casual", value: "casual" },
-  { label: "Work", value: "work" },
-  { label: "Formal", value: "formal" },
-  { label: "Gym", value: "gym" },
-  { label: "Date", value: "date" },
-];
+const FILTERS = [{ value: 'all', label: 'All' }, ...OCCASIONS] as const;
 
 export default function OutfitsScreen() {
-  const [activeFilter, setActiveFilter] = useState("all");
+  const [filter, setFilter] = useState<string>('all');
   const router = useRouter();
-  const { outfits, isLoading, deleteOutfit } = useOutfits();
+  const { outfits, isLoading, refetch } = useOutfits();
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filteredOutfits = activeFilter === "all"
-    ? outfits
-    : outfits.filter(o => o.occasion === activeFilter);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
+
+  const filtered = filter === 'all' ? outfits : outfits.filter(o => o.occasion === filter);
 
   const renderItem = ({ item }: { item: OutfitWithItems }) => {
-    const previewImg = item.ai_preview_url || item.items?.[0]?.clean_image_url || item.items?.[0]?.image_url;
-
+    const preview =
+      item.ai_preview_url ||
+      item.items[0]?.clean_image_url ||
+      item.items[0]?.image_url;
     return (
-      <TouchableOpacity 
-        className="relative aspect-[3/4] rounded-2xl overflow-hidden bg-surface-container shadow-sm border border-outline-variant/10"
+      <TouchableOpacity
+        onPress={() => router.push(`/outfits/${item.id}`)}
+        activeOpacity={0.85}
+        style={{
+          flex: 1,
+          aspectRatio: 3 / 4,
+          borderRadius: 18,
+          overflow: 'hidden',
+          backgroundColor: colors.surfaceContainer,
+          marginBottom: 12,
+        }}
       >
-        {previewImg ? (
-          <Image source={{ uri: previewImg }} className="w-full h-full object-cover" />
+        {preview ? (
+          <Image
+            source={{ uri: preview }}
+            style={{ width: '100%', height: '100%' }}
+            contentFit="cover"
+            transition={150}
+          />
         ) : (
-          <View className="flex-1 items-center justify-center bg-surface-container-low">
-            <Text className="text-on-surface-variant">No Preview</Text>
+          <View
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <MaterialCommunityIcons
+              name="hanger"
+              size={32}
+              color={colors.onSurfaceMuted}
+            />
           </View>
         )}
-        <View className="absolute bottom-0 left-0 right-0 p-3 bg-black/40">
-          <Text className="text-white font-semibold truncate">{item.name}</Text>
-          <Text className="text-white/70 text-xs uppercase">{item.occasion}</Text>
-        </View>
-        <TouchableOpacity 
-          onPress={() => deleteOutfit(item.id)}
-          className="absolute top-2 right-2 w-8 h-8 bg-white/80 rounded-full items-center justify-center"
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            padding: 10,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+          }}
         >
-          <Text className="text-error font-bold">×</Text>
-        </TouchableOpacity>
+          <Text numberOfLines={1} style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+            {item.name}
+          </Text>
+          {item.occasion && (
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.8)',
+                fontSize: 10,
+                textTransform: 'uppercase',
+                letterSpacing: 1.2,
+              }}
+            >
+              {item.occasion}
+            </Text>
+          )}
+        </View>
+        {item.is_ai_generated && (
+          <View
+            style={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              backgroundColor: 'rgba(255,255,255,0.95)',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 999,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 3,
+            }}
+          >
+            <MaterialCommunityIcons name="creation" size={11} color={colors.primary} />
+            <Text style={{ color: colors.primary, fontSize: 10, fontWeight: '700' }}>AI</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
 
   return (
-    <View className="flex-1 bg-surface">
-      <View className="pt-16 px-4 pb-4 flex-row items-center justify-between">
+    <Screen>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingHorizontal: 16,
+          paddingTop: 8,
+          paddingBottom: 12,
+        }}
+      >
         <View>
-          <Text className="text-on-surface text-2xl font-bold">Outfits</Text>
-          <Text className="text-on-surface-variant">{outfits.length} saved looks</Text>
+          <Text style={{ color: colors.onSurface, fontSize: 24, fontWeight: '800' }}>Outfits</Text>
+          <Text style={{ color: colors.onSurfaceVariant, fontSize: 13 }}>
+            {outfits.length} saved look{outfits.length === 1 ? '' : 's'}
+          </Text>
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => router.push('/outfits/builder')}
-          className="h-10 px-4 bg-primary rounded-xl flex-row items-center gap-1"
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
+            backgroundColor: colors.primary,
+            paddingHorizontal: 14,
+            height: 40,
+            borderRadius: 20,
+          }}
         >
-          <Text className="text-white font-semibold">Build</Text>
+          <MaterialCommunityIcons name="plus" size={18} color="#FFF" />
+          <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Build</Text>
         </TouchableOpacity>
       </View>
 
-      <View className="py-4">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-4">
-          <View className="flex-row gap-2">
-            {OCCASION_FILTERS.map(f => (
-              <TouchableOpacity
-                key={f.value}
-                onPress={() => setActiveFilter(f.value)}
-                className={`px-4 py-2 rounded-full border ${
-                  activeFilter === f.value 
-                    ? "bg-primary border-primary" 
-                    : "bg-transparent border-outline-variant/20"
-                }`}
-              >
-                <Text className={`${activeFilter === f.value ? "text-white" : "text-on-surface-variant"} text-xs font-semibold`}>
-                  {f.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </ScrollView>
-      </View>
-
-      <View className="flex-1 px-4 pb-24">
-        {isLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#e75a66" />
-          </View>
-        ) : filteredOutfits.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-on-surface-variant text-lg text-center">No outfits found</Text>
-            <TouchableOpacity 
-              onPress={() => router.push('/outfits/builder')}
-              className="mt-4 px-8 py-3 bg-primary rounded-2xl"
-            >
-              <Text className="text-white font-bold">Build an Outfit</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredOutfits}
-            renderItem={renderItem}
-            keyExtractor={item => item.id}
-            numColumns={2}
-            columnWrapperStyle={{ gap: 12, justifyContent: 'space-between' }}
-            contentContainerStyle={{ gap: 12 }}
-            showsVerticalScrollIndicator={false}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}
+      >
+        {FILTERS.map(f => (
+          <Chip
+            key={f.value}
+            label={f.label}
+            active={filter === f.value}
+            onPress={() => setFilter(f.value)}
           />
-        )}
-      </View>
-    </View>
+        ))}
+      </ScrollView>
+
+      {isLoading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon="hanger"
+          title={filter === 'all' ? 'No outfits yet' : 'Nothing here'}
+          description={
+            filter === 'all'
+              ? 'Build your first look or let Drobe suggest one.'
+              : 'No outfits for this occasion.'
+          }
+          ctaLabel="Build outfit"
+          onCta={() => router.push('/outfits/builder')}
+        />
+      ) : (
+        <FlatList
+          data={filtered}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          numColumns={2}
+          columnWrapperStyle={{ gap: 12 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          showsVerticalScrollIndicator={false}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+        />
+      )}
+    </Screen>
   );
 }

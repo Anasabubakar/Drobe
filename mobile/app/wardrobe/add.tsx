@@ -1,135 +1,465 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadClothingItem } from '../../hooks/useWardrobe';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Screen } from '../../components/Screen';
+import { Button } from '../../components/Button';
+import { TextField } from '../../components/TextField';
+import { Chip } from '../../components/Chip';
+import { CATEGORIES, OCCASIONS, COLOR_SWATCHES, colors } from '../../lib/theme';
+import { createClothingItem } from '../../hooks/useWardrobe';
+import { ClothingCategory } from '../../types';
+import { useQueryClient } from '@tanstack/react-query';
 
-interface QueueFile {
+interface QueueItem {
   id: string;
   uri: string;
+  name: string;
+  category: ClothingCategory;
+  color: string | null;
+  brand: string;
+  tags: string[];
   status: 'pending' | 'uploading' | 'done' | 'error';
   errorMsg?: string;
 }
 
-export default function WardrobeAddScreen() {
-  const [queue, setQueue] = useState<QueueFile[]>([]);
-  const [processing, setProcessing] = useState(false);
-  const router = useRouter();
+function newId() {
+  return Math.random().toString(36).slice(2, 10);
+}
 
-  const pickImages = async () => {
+export default function AddItemsScreen() {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [activeIdx, setActiveIdx] = useState<number>(0);
+  const [uploading, setUploading] = useState(false);
+
+  const active = queue[activeIdx];
+
+  const pickFromLibrary = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow photo access to add clothing.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
-      quality: 0.8,
+      selectionLimit: 10,
+      quality: 0.9,
     });
-
-    if (!result.canceled) {
-      const newItems: QueueFile[] = result.assets.map(asset => ({
-        id: Math.random().toString(36).substring(7),
-        uri: asset.uri,
-        status: 'pending',
-      }));
-      setQueue(prev => [...prev, ...newItems]);
-    }
+    if (result.canceled) return;
+    addToQueue(result.assets.map(a => a.uri));
   };
 
-  const processUploads = async () => {
-    const pending = queue.filter(i => i.status === 'pending');
-    if (pending.length === 0) return;
+  const pickFromCamera = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Allow camera access to add clothing.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9,
+    });
+    if (result.canceled) return;
+    addToQueue(result.assets.map(a => a.uri));
+  };
 
-    setProcessing(true);
+  const addToQueue = (uris: string[]) => {
+    const newItems: QueueItem[] = uris.map((uri, i) => ({
+      id: newId(),
+      uri,
+      name: '',
+      category: 'top',
+      color: null,
+      brand: '',
+      tags: [],
+      status: 'pending',
+    }));
+    setQueue(prev => [...prev, ...newItems]);
+    setActiveIdx(queue.length);
+  };
 
-    for (const item of pending) {
-      setQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'uploading' } : i));
-      
-      try {
-        const formData = new FormData();
-        formData.append('image', {
-          uri: item.uri,
-          name: `upload_${item.id}.jpg`,
-          type: 'image/jpeg',
-        } as any);
+  const updateActive = (patch: Partial<QueueItem>) => {
+    setQueue(prev => prev.map((q, i) => (i === activeIdx ? { ...q, ...patch } : q)));
+  };
 
-        await uploadClothingItem(formData);
-        setQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'done' } : i));
-      } catch (e: any) {
-        setQueue(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', errorMsg: e.message } : i));
+  const removeActive = () => {
+    setQueue(prev => prev.filter((_, i) => i !== activeIdx));
+    setActiveIdx(i => Math.max(0, i - 1));
+  };
+
+  const toggleTag = (tag: string) => {
+    if (!active) return;
+    const has = active.tags.includes(tag);
+    updateActive({ tags: has ? active.tags.filter(t => t !== tag) : [...active.tags, tag] });
+  };
+
+  const uploadAll = async () => {
+    if (queue.length === 0) return;
+    setUploading(true);
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        if (item.status === 'done') continue;
+        setQueue(prev => prev.map((q, idx) => (idx === i ? { ...q, status: 'uploading' } : q)));
+        try {
+          await createClothingItem({
+            name: item.name.trim() || 'Untitled Item',
+            category: item.category,
+            color: item.color,
+            brand: item.brand.trim() || null,
+            tags: item.tags,
+            localImageUri: item.uri,
+          });
+          setQueue(prev => prev.map((q, idx) => (idx === i ? { ...q, status: 'done' } : q)));
+        } catch (e: any) {
+          setQueue(prev =>
+            prev.map((q, idx) =>
+              idx === i ? { ...q, status: 'error', errorMsg: e.message ?? 'Upload failed' } : q
+            )
+          );
+        }
       }
+      await qc.invalidateQueries({ queryKey: ['wardrobe'] });
+      const failed = queue.filter(q => q.status === 'error').length;
+      Alert.alert(
+        failed ? 'Partial Upload' : 'Added',
+        failed
+          ? `${queue.length - failed} added, ${failed} failed. Try again for failed items.`
+          : `${queue.length} item${queue.length === 1 ? '' : 's'} added to your closet.`,
+        [{ text: 'Done', onPress: () => router.replace('/(tabs)/closet') }]
+      );
+    } finally {
+      setUploading(false);
     }
-
-    setProcessing(false);
-    Alert.alert('Success', 'Items added to your wardrobe', [
-      { text: 'OK', onPress: () => router.replace('/(tabs)/closet') }
-    ]);
   };
 
-  const removeItem = (id: string) => {
-    setQueue(prev => prev.filter(i => i.id !== id));
-  };
+  if (queue.length === 0) {
+    return (
+      <Screen edges={['top', 'bottom']}>
+        <Header onCancel={() => router.back()} title="Add to Closet" />
+        <View style={{ flex: 1, padding: 20, gap: 16, justifyContent: 'center' }}>
+          <Text
+            style={{
+              color: colors.onSurface,
+              fontSize: 22,
+              fontWeight: '800',
+              textAlign: 'center',
+              marginBottom: 8,
+            }}
+          >
+            Add your clothes
+          </Text>
+          <Text
+            style={{
+              color: colors.onSurfaceVariant,
+              fontSize: 14,
+              textAlign: 'center',
+              marginBottom: 24,
+              paddingHorizontal: 20,
+            }}
+          >
+            Pick from your gallery or snap a photo. You can edit details before saving.
+          </Text>
+
+          <Button
+            label="Choose from Gallery"
+            onPress={pickFromLibrary}
+            icon={<MaterialCommunityIcons name="image-multiple" size={20} color="#FFF" />}
+          />
+          <Button
+            label="Take a Photo"
+            onPress={pickFromCamera}
+            variant="secondary"
+            icon={
+              <MaterialCommunityIcons name="camera-outline" size={20} color={colors.onSurface} />
+            }
+          />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
-    <View className="flex-1 bg-surface px-6 py-16">
-      <View className="flex-row items-center justify-between mb-8">
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text className="text-on-surface-variant text-lg">Cancel</Text>
-        </TouchableOpacity>
-        <Text className="text-on-surface text-xl font-bold">Add to Closet</Text>
-        <View className="w-10" />
-      </View>
+    <Screen edges={['top', 'bottom']}>
+      <Header
+        onCancel={() => {
+          if (uploading) return;
+          Alert.alert('Discard?', 'You will lose unsaved items.', [
+            { text: 'Keep editing', style: 'cancel' },
+            { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+          ]);
+        }}
+        title={`Item ${activeIdx + 1} of ${queue.length}`}
+      />
 
-      <TouchableOpacity 
-        onPress={pickImages}
-        className="w-full aspect-video rounded-3xl border-2 border-dashed border-outline-variant/30 items-center justify-center bg-surface-container mb-8"
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <Text className="text-primary text-lg font-bold mb-2">Pick Photos</Text>
-        <Text className="text-on-surface-variant text-center text-sm px-8">
-          Select one or multiple photos from your gallery
-        </Text>
-      </TouchableOpacity>
-
-      <View className="flex-1">
-        <Text className="text-on-surface-variant uppercase tracking-widest text-xs font-semibold mb-4">
-          Queue ({queue.length})
-        </Text>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="space-y-3">
-            {queue.map(item => (
-              <View key={item.id} className="flex-row items-center gap-3 bg-surface-container-lowest p-3 rounded-2xl border border-outline-variant/10 shadow-sm">
-                <Image source={{ uri: item.uri }} className="w-16 h-16 rounded-xl" />
-                <View className="flex-1">
-                  <Text className="text-on-surface font-medium truncate w-40">Image_{item.id}</Text>
-                  <Text className={`text-xs ${item.status === 'error' ? 'text-error' : 'text-on-surface-variant'}`}>
-                    {item.status === 'uploading' && 'Uploading...'}
-                    {item.status === 'done' && 'Added'}
-                    {item.status === 'error' && item.errorMsg}
-                    {item.status === 'pending' && 'Ready'}
-                  </Text>
-                </View>
-                {item.status === 'pending' && (
-                  <TouchableOpacity onPress={() => removeItem(item.id)}>
-                    <Text className="text-error font-bold">Remove</Text>
-                  </TouchableOpacity>
+        <ScrollView
+          contentContainerStyle={{ padding: 20, paddingBottom: 120 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Item thumbnails */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingBottom: 16 }}
+          >
+            {queue.map((q, idx) => (
+              <TouchableOpacity
+                key={q.id}
+                onPress={() => setActiveIdx(idx)}
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  borderWidth: idx === activeIdx ? 2 : 0,
+                  borderColor: colors.primary,
+                }}
+              >
+                <Image source={{ uri: q.uri }} style={{ width: '100%', height: '100%' }} />
+                {q.status === 'done' && (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundColor: 'rgba(27,135,63,0.55)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <MaterialCommunityIcons name="check" size={20} color="#FFF" />
+                  </View>
                 )}
-                {item.status === 'uploading' && <ActivityIndicator size="small" color="#e75a66" />}
-              </View>
+                {q.status === 'uploading' && (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundColor: 'rgba(0,0,0,0.4)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <ActivityIndicator color="#FFF" size="small" />
+                  </View>
+                )}
+              </TouchableOpacity>
             ))}
+            <TouchableOpacity
+              onPress={pickFromLibrary}
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: 12,
+                backgroundColor: colors.surfaceContainer,
+                borderWidth: 1,
+                borderColor: colors.outlineVariant,
+                borderStyle: 'dashed',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <MaterialCommunityIcons name="plus" size={20} color={colors.onSurfaceMuted} />
+            </TouchableOpacity>
+          </ScrollView>
+
+          {/* Image preview */}
+          <View
+            style={{
+              aspectRatio: 3 / 4,
+              borderRadius: 24,
+              overflow: 'hidden',
+              backgroundColor: colors.surfaceContainer,
+              marginBottom: 20,
+            }}
+          >
+            <Image
+              source={{ uri: active.uri }}
+              style={{ width: '100%', height: '100%' }}
+              contentFit="cover"
+            />
+          </View>
+
+          {/* Form */}
+          <View style={{ gap: 16 }}>
+            <TextField
+              label="Name"
+              placeholder="e.g. Black graphic tee"
+              value={active.name}
+              onChangeText={(t: string) => updateActive({ name: t })}
+            />
+
+            <View>
+              <Text
+                style={{
+                  color: colors.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 1.2,
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                  marginLeft: 4,
+                }}
+              >
+                Category
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingRight: 12 }}
+              >
+                {CATEGORIES.map(c => (
+                  <Chip
+                    key={c.value}
+                    label={c.label}
+                    active={active.category === c.value}
+                    onPress={() => updateActive({ category: c.value as ClothingCategory })}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+
+            <View>
+              <Text
+                style={{
+                  color: colors.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 1.2,
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                  marginLeft: 4,
+                }}
+              >
+                Color
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 10, paddingRight: 12 }}
+              >
+                {COLOR_SWATCHES.map(s => (
+                  <TouchableOpacity
+                    key={s.value}
+                    onPress={() => updateActive({ color: active.color === s.value ? null : s.value })}
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 17,
+                      backgroundColor: s.hex,
+                      borderWidth: active.color === s.value ? 3 : 1,
+                      borderColor:
+                        active.color === s.value ? colors.primary : 'rgba(0,0,0,0.08)',
+                    }}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+
+            <TextField
+              label="Brand (optional)"
+              placeholder="e.g. Uniqlo"
+              value={active.brand}
+              onChangeText={(t: string) => updateActive({ brand: t })}
+            />
+
+            <View>
+              <Text
+                style={{
+                  color: colors.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: '700',
+                  letterSpacing: 1.2,
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                  marginLeft: 4,
+                }}
+              >
+                Occasion tags
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {OCCASIONS.map(o => (
+                  <Chip
+                    key={o.value}
+                    label={o.label}
+                    active={active.tags.includes(o.value)}
+                    onPress={() => toggleTag(o.value)}
+                  />
+                ))}
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={removeActive}
+              style={{ paddingVertical: 16, alignItems: 'center' }}
+            >
+              <Text style={{ color: colors.error, fontWeight: '600', fontSize: 13 }}>
+                Remove this item
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
-      </View>
 
-      {queue.length > 0 && (
-        <TouchableOpacity 
-          onPress={processUploads}
-          disabled={processing}
-          className={`w-full h-14 rounded-2xl items-center justify-center mt-4 ${processing ? 'bg-primary/50' : 'bg-primary shadow-lg'}`}
+        <View
+          style={{
+            padding: 16,
+            paddingBottom: Platform.OS === 'ios' ? 16 : 20,
+            borderTopWidth: 1,
+            borderTopColor: colors.outlineVariant,
+            backgroundColor: colors.surface,
+          }}
         >
-          {processing ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text className="text-white font-bold text-lg">Add to Closet</Text>
-          )}
-        </TouchableOpacity>
-      )}
+          <Button
+            label={
+              uploading
+                ? 'Saving...'
+                : `Add ${queue.length} item${queue.length === 1 ? '' : 's'} to closet`
+            }
+            onPress={uploadAll}
+            loading={uploading}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Screen>
+  );
+}
+
+function Header({ title, onCancel }: { title: string; onCancel: () => void }) {
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.outlineVariant,
+      }}
+    >
+      <TouchableOpacity onPress={onCancel}>
+        <Text style={{ color: colors.onSurfaceVariant, fontSize: 15 }}>Cancel</Text>
+      </TouchableOpacity>
+      <Text style={{ fontSize: 16, fontWeight: '700', color: colors.onSurface }}>{title}</Text>
+      <View style={{ width: 50 }} />
     </View>
   );
 }
