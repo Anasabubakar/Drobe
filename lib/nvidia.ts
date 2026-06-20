@@ -9,6 +9,23 @@ const IS_MOCK_MODE = !NVIDIA_API_KEY || NVIDIA_API_KEY === "your-nvidia-api-key"
 
 const INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 
+// Text reasoning model (outfit suggestions). kimi-k2.6 is text-only — it
+// silently drops image input, so it must NOT be used for vision.
+const TEXT_MODEL = "moonshotai/kimi-k2.6";
+// Multimodal model for clothing photo analysis. Verified to actually process
+// images on integrate.api.nvidia.com (kimi-k2.6 does not).
+const VISION_MODEL = "meta/llama-3.2-90b-vision-instruct";
+
+// These models often wrap JSON in ```json fences or prose. Strip fences and
+// extract the outermost {...} block before parsing.
+function parseJsonLoose<T>(text: string): T {
+  const cleaned = text.replace(/```(?:json)?/gi, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  const slice = start !== -1 && end !== -1 ? cleaned.slice(start, end + 1) : cleaned;
+  return JSON.parse(slice) as T;
+}
+
 // ============================================
 // OUTFIT SUGGESTIONS
 // ============================================
@@ -62,7 +79,7 @@ Respond ONLY with valid JSON in this exact format:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "moonshotai/kimi-k2.6",
+        model: TEXT_MODEL,
         messages: [{ role: "user", content: prompt }],
         max_tokens: 16384,
         temperature: 1.0,
@@ -79,7 +96,7 @@ Respond ONLY with valid JSON in this exact format:
     const responseText = data.choices[0].message.content;
 
     try {
-      return JSON.parse(responseText) as AISuggestResponse;
+      return parseJsonLoose<AISuggestResponse>(responseText);
     } catch (e) {
       console.error("Failed to parse NVIDIA response:", responseText);
       return MOCK_SUGGESTIONS;
@@ -116,7 +133,7 @@ export async function analyzeClothingImage(imageUrl: string): Promise<{
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "moonshotai/kimi-k2.6",
+        model: VISION_MODEL,
         messages: [
           {
             role: "user",
@@ -154,7 +171,7 @@ For tags, use style descriptors like: casual, formal, summer, winter, streetwear
     const responseText = data.choices[0].message.content;
 
     try {
-      return JSON.parse(responseText) as any;
+      return parseJsonLoose<{ category: string; color: string; tags: string[]; suggested_name: string }>(responseText);
     } catch (e) {
       console.error("Failed to parse NVIDIA response:", responseText);
       return MOCK_ANALYSIS;
@@ -189,7 +206,7 @@ export async function analyzeBatchPhoto(imageUrl: string): Promise<{
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "moonshotai/kimi-k2.6",
+        model: VISION_MODEL,
         messages: [
           {
             role: "user",
@@ -229,7 +246,7 @@ Category must be one of: top, bottom, dress, outerwear, shoes, accessory`
     const responseText = data.choices[0].message.content;
 
     try {
-      return JSON.parse(responseText) as any;
+      return parseJsonLoose<{ detected_count: number; items: { description: string; category: string; color: string }[] }>(responseText);
     } catch (e) {
       console.error("Failed to parse NVIDIA response:", responseText);
       return MOCK_BATCH_ANALYSIS;
