@@ -1,24 +1,71 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Drobe",
+    "slug": "drobe",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "drobe",
     "userInterfaceStyle": "light",
+    "primaryColor": "#E75A66",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.drobe.mobile",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Drobe needs camera access so you can snap photos of your clothing to add to your digital closet.",
+        "NSPhotoLibraryUsageDescription": "Drobe needs photo library access so you can choose clothing pictures and a profile portrait.",
+        "NSPhotoLibraryAddUsageDescription": "Drobe may save processed clothing photos back to your library when you ask."
+      }
     },
     "android": {
+      "package": "app.drobe.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FCFCFC",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Drobe needs access to your photos to add clothing to your closet.",
+          "cameraPermission": "Drobe needs access to your camera to snap photos of your clothing."
+        }
+      ],
+      "expo-secure-store",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FCFCFC"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      }
     }
   }
 }

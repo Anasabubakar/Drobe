@@ -1,39 +1,77 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
+import { supabase, getUserId } from '../lib/supabase';
 import { Outfit, ClothingItem } from '../types';
-import { supabase } from '../lib/supabase';
-
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-});
-
-api.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
-  }
-  return config;
-});
 
 export type OutfitWithItems = Outfit & { items: ClothingItem[] };
+
+async function fetchOutfits(): Promise<OutfitWithItems[]> {
+  const uid = await getUserId();
+  if (!uid) return [];
+
+  const { data, error } = await supabase
+    .from('outfits')
+    .select(`
+      *,
+      outfit_items (
+        clothing_items (*)
+      )
+    `)
+    .eq('user_id', uid)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((o: any) => ({
+    ...o,
+    items: (o.outfit_items ?? [])
+      .map((oi: any) => oi.clothing_items)
+      .filter(Boolean) as ClothingItem[],
+  }));
+}
 
 export function useOutfits() {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['outfits'],
-    queryFn: async () => {
-      const { data } = await api.get('/api/outfits');
-      return data.outfits as OutfitWithItems[];
-    },
+    queryFn: fetchOutfits,
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (outfit: { name: string; occasion: string; item_ids: string[] }) => {
-      const { data } = await api.post('/api/outfits', outfit);
-      return data;
+    mutationFn: async (outfit: {
+      name: string;
+      occasion: string;
+      item_ids: string[];
+      notes?: string;
+      is_ai_generated?: boolean;
+    }) => {
+      const uid = await getUserId();
+      if (!uid) throw new Error('Not authenticated');
+
+      const { data: outfitRow, error: insertErr } = await supabase
+        .from('outfits')
+        .insert({
+          user_id: uid,
+          name: outfit.name,
+          occasion: outfit.occasion,
+          notes: outfit.notes ?? null,
+          is_ai_generated: outfit.is_ai_generated ?? false,
+        })
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      if (outfit.item_ids.length > 0) {
+        const rows = outfit.item_ids.map(id => ({
+          outfit_id: outfitRow.id,
+          clothing_item_id: id,
+        }));
+        const { error: linkErr } = await supabase.from('outfit_items').insert(rows);
+        if (linkErr) throw linkErr;
+      }
+
+      return outfitRow;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outfits'] });
@@ -42,10 +80,12 @@ export function useOutfits() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/api/outfits?id=${id}`);
+      const { error } = await supabase.from('outfits').delete().eq('id', id);
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outfits'] });
+      queryClient.invalidateQueries({ queryKey: ['schedule'] });
     },
   });
 
@@ -53,12 +93,35 @@ export function useOutfits() {
     outfits: data ?? [],
     isLoading,
     error,
+    refetch,
     saveOutfit: saveMutation.mutateAsync,
     deleteOutfit: deleteMutation.mutateAsync,
   };
 }
 
-export async function triggerTryOn(garmentId?: string, outfitId?: string) {
-  const { data } = await api.post('/api/tryon', { garment_id: garmentId, outfit_id: outfitId });
-  return data;
+export function useOutfit(id: string | undefined) {
+  return useQuery({
+    queryKey: ['outfit', id],
+    enabled: !!id,
+    queryFn: async (): Promise<OutfitWithItems | null> => {
+      if (!id) return null;
+      const { data, error } = await supabase
+        .from('outfits')
+        .select(`
+          *,
+          outfit_items (
+            clothing_items (*)
+          )
+        `)
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return {
+        ...data,
+        items: (data.outfit_items ?? [])
+          .map((oi: any) => oi.clothing_items)
+          .filter(Boolean),
+      } as OutfitWithItems;
+    },
+  });
 }

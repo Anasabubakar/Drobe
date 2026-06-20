@@ -2,13 +2,19 @@ import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Session } from '@supabase/supabase-js';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, StatusBar } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import "../global.css";
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-const queryClient = new QueryClient();
-
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 30,
+      retry: 1,
+    },
+  },
+});
 
 export default function RootLayout() {
   const [session, setSession] = useState<Session | null>(null);
@@ -17,13 +23,11 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
-    // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setIsLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -37,25 +41,28 @@ export default function RootLayout() {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!session && !inAuthGroup) {
-      // Redirect to login if not authenticated and not in auth group
       router.replace('/(auth)/login');
     } else if (session && inAuthGroup) {
-      // Redirect to home if authenticated and in auth group
       router.replace('/(tabs)');
     }
   }, [session, isLoading, segments]);
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-surface">
-        <ActivityIndicator size="large" color="#e75a66" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FCFCFC' }}>
+        <ActivityIndicator size="large" color="#E75A66" />
       </View>
     );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <Slot />
-    </QueryClientProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FCFCFC" />
+          <Slot />
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
